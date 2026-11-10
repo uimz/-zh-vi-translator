@@ -207,9 +207,25 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val status = json.optInt("responseStatus", 200)
                 if (status != 200) throw IllegalStateException(json.optString("responseDetails", "免費翻譯服務暫時無法使用"))
                 val responseData = json.getJSONObject("responseData")
-                // Use the service's primary machine-translation result. Translation-memory matches
-                // can be partial phrase fragments, even when their match score is high.
-                var translated = responseData.getString("translatedText")
+                // Keep the service's primary sentence as the source of truth. A high-scoring
+                // translation-memory fragment can be shorter than the full input and omit meaning.
+                var translated = responseData.optString("translatedText", "").trim()
+                if (translated.isBlank()) {
+                    val matches = json.optJSONArray("matches")
+                    var bestScore = -1.0
+                    if (matches != null) {
+                        for (i in 0 until matches.length()) {
+                            val candidate = matches.optJSONObject(i) ?: continue
+                            val score = candidate.optString("match").toDoubleOrNull() ?: 0.0
+                            val candidateText = candidate.optString("translation").trim()
+                            if (candidateText.isNotEmpty() && score > bestScore) {
+                                bestScore = score
+                                translated = candidateText
+                            }
+                        }
+                    }
+                }
+                // Decode HTML entities and normalize whitespace without changing the wording.
                 translated = Html.fromHtml(translated, Html.FROM_HTML_MODE_LEGACY)
                     .toString()
                     .replace(Regex("[\\t\\r\\n ]+"), " ")
@@ -218,7 +234,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val zh = if (chinese) original else translated
                 val vi = if (chinese) translated else original
                 val py = pinyin(zh)
-                val note = if (bestScore in 0.0..0.69) "免費翻譯服務提供的相符度較低，建議確認語意後再傳送。" else ""
+                val primaryScore = responseData.optDouble("match", -1.0)
+                val note = if (primaryScore in 0.0..0.69) "免費翻譯服務提供的相符度較低，建議確認語意後再傳送。" else ""
                 runOnUiThread {
                     content.removeView(loading)
                     addBubble(zh, py, vi, note)
@@ -235,45 +252,43 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun pinyin(s: String): String {
-        // Keep common Chinese words together instead of inserting spaces between every character.
-        val commonWords = listOf(
-            "今天", "明天", "昨天", "現在", "以前", "以後", "台灣", "臺灣", "越南",
-            "天氣", "時間", "地方", "朋友", "家人", "工作", "上班", "下班", "吃飯",
-            "睡覺", "開心", "高興", "漂亮", "謝謝", "不好意思", "沒關係", "怎麼", "為什麼",
-            "多少", "可以", "需要", "如果", "因為", "所以", "但是", "而且", "已經",
-            "非常", "真的", "可能", "知道", "覺得", "喜歡", "幫忙", "翻譯", "中文",
-            "繁體", "越南語", "下雨", "早上", "晚上",
-            "中午", "下午", "星期", "禮拜", "明年", "今年", "昨天晚上"
+        // Group common vocabulary into words; unknown Han characters safely fall back
+        // to character-level Hanyu Pinyin.
+        val words = listOf(
+            "繁體中文", "今天", "明天", "昨天", "台灣", "臺灣", "天氣", "越南語",
+            "越南", "中文", "很冷", "謝謝", "你好", "再見", "現在", "等等",
+            "為什麼", "怎麼", "可以", "不可以", "沒有", "工作", "上班", "下班",
+            "吃飯", "睡覺", "回家", "出門", "爸爸", "媽媽", "老婆", "老公",
+            "朋友", "家人", "明年", "今年"
         ).sortedByDescending { it.length }
-
-        val tokens = mutableListOf<String>()
+        val out = StringBuilder()
         var i = 0
         while (i < s.length) {
             val ch = s[i]
             if (ch in '\\u3400'..'\\u9fff') {
-                val word = commonWords.firstOrNull { s.startsWith(it, i) } ?: ch.toString()
-                val syllables = word.map { char ->
-                    val raw = PinyinHelper.toHanyuPinyinStringArray(char)
-                        ?.firstOrNull()?.substringBefore(",") ?: char.toString()
-                    toneMarks(raw)
-                }.joinToString("")
-                tokens.add(syllables)
-                i += word.length
-            } else if (ch.isWhitespace()) {
-                if (tokens.isNotEmpty() && tokens.last() != " ") tokens.add(" ")
-                i++
-            } else if (ch in "，。！？；：、,.!?;:") {
-                if (tokens.isNotEmpty()) tokens[tokens.lastIndex] = tokens.last() + ch
-                else tokens.add(ch.toString())
-                i++
+                val token = words.firstOrNull { s.startsWith(it, i) } ?: ch.toString()
+                if (out.isNotEmpty() && out.last() != ' ' && out.last() !in "，。！？；：、,.!?;:") out.append(' ')
+                token.forEach { han ->
+                    val raw = PinyinHelper.toHanyuPinyinStringArray(han)
+                        ?.firstOrNull()?.substringBefore(",") ?: han.toString()
+                    out.append(toneMarks(raw))
+                }
+                i += token.length
             } else {
-                tokens.add(ch.toString())
+                if (ch.isWhitespace()) {
+                    if (out.isNotEmpty() && out.last() != ' ') out.append(' ')
+                } else if (ch in "，。！？；：、,.!?;:") {
+                    while (out.isNotEmpty() && out.last() == ' ') out.deleteCharAt(out.lastIndex)
+                    out.append(ch)
+                } else {
+                    if (out.isNotEmpty() && out.last() != ' ' && out.last() !in "，。！？；：、,.!?;:") out.append(' ')
+                    out.append(ch)
+                }
                 i++
             }
         }
-        return tokens.joinToString("")
-            .replace(Regex(" +"), " ")
-            .trim()
+        val result = out.toString().trim()
+        return if (result.isNotEmpty()) result.replaceFirstChar { it.uppercase() } else result
     }
 
     private fun toneMarks(raw: String): String {

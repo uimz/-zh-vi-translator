@@ -7,6 +7,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.content.Context
 import android.view.Gravity
+import android.view.View
+import android.app.AlertDialog
 import android.view.inputmethod.InputMethodManager
 import android.speech.tts.TextToSpeech
 import android.widget.*
@@ -39,7 +41,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 18, 18, 18)
-            background = rounded(navy, 0, 0, 26)
+            background = rounded(navy, 26)
         }
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         top.addView(TextView(this).apply {
@@ -98,16 +100,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val swap = TextView(this).apply {
             text = "⇄"; textSize = 24f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
             background = rounded(blue, 40); setPadding(12, 5, 12, 5)
-            setOnClickListener {
-                sourceChinese = !sourceChinese
-                leftLang.text = if (sourceChinese) "繁體中文" else "越南語"
-                rightLang.text = if (sourceChinese) "越南語" else "繁體中文"
-                input.hint = if (sourceChinese) "輸入繁體中文…" else "Nhập tiếng Việt…"
-            }
         }
         val rightLang = TextView(this).apply {
             text = "越南語"; textSize = 15f; setTextColor(navy); gravity = Gravity.CENTER
             setPadding(8, 10, 8, 10); layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+        swap.setOnClickListener {
+            sourceChinese = !sourceChinese
+            leftLang.text = if (sourceChinese) "繁體中文" else "越南語"
+            rightLang.text = if (sourceChinese) "越南語" else "繁體中文"
+            input.hint = if (sourceChinese) "輸入繁體中文…" else "Nhập tiếng Việt…"
         }
         langCard.addView(leftLang); langCard.addView(swap); langCard.addView(rightLang)
         content.addView(langCard)

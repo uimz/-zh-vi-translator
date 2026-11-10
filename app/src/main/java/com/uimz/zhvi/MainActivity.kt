@@ -313,7 +313,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             base.contains("a") -> "a"
             base.contains("e") -> "e"
             base.contains("ou") -> "o"
-            else -> base.lastOrNull { it in vowels }?.toString()
+            else -> base.lastOrNull { ch -> vowels.any { vowel -> vowel[0] == ch } }?.toString()
         } ?: return base
         val marks = mapOf(
             'a' to listOf('ā','á','ǎ','à'), 'o' to listOf('ō','ó','ǒ','ò'),

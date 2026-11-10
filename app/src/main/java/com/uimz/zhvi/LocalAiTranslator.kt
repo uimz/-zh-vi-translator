@@ -42,7 +42,7 @@ object LocalAiTranslator {
             Translate the user's text into natural, complete Vietnamese used in everyday life.
             Preserve every meaning, subject, object, negation, condition, tense, date, time,
             number, amount, unit, name and degree of emotion. Do not omit details or add facts.
-            Do not turn a statement about weather into a statement about a beautiful day.
+            Preserve the original topic and proposition; do not replace a specific condition with a broader or different statement.
             Use neutral, general-public wording. Do not assume family or romantic relationships.
             Output only the Vietnamese translation. Do not explain or add quotation marks.
 

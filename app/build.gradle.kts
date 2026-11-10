@@ -9,8 +9,8 @@ android {
         applicationId = "com.uimz.zhvi"
         minSdk = 23
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 3
+        versionName = "3.0"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -20,5 +20,4 @@ android {
 }
 dependencies {
     implementation("com.belerweb:pinyin4j:2.5.1")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }

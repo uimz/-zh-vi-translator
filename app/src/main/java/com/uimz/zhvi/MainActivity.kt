@@ -1,6 +1,7 @@
 package com.uimz.zhvi
 
 import android.app.Activity
+import android.text.Html
 import android.app.AlertDialog
 import android.os.Bundle
 import android.graphics.Color
@@ -58,7 +59,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
         header.addView(top)
         header.addView(TextView(this).apply {
-            text = "免費中越翻譯・拼音・語音"
+            text = "自然中越翻譯・拼音・語音"
             textSize = 13f; setTextColor(Color.rgb(220, 230, 250))
             gravity = Gravity.CENTER; setPadding(0, 10, 0, 8)
         })
@@ -135,7 +136,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
         controls.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         controls.addView(Button(this).apply {
-            text = "免費翻譯"; textSize = 15f; setTextColor(Color.WHITE)
+            text = "開始翻譯"; textSize = 15f; setTextColor(Color.WHITE)
             background = rounded(blue, 14); setPadding(16, 4, 16, 4)
             setOnClickListener { translateFree() }
         })
@@ -167,7 +168,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         AlertDialog.Builder(this).setTitle("中越翻譯通").setItems(items) { _, which ->
             when (which) {
                 1 -> showInfo("翻譯紀錄", if (history.isEmpty()) "目前沒有翻譯紀錄。" else history.joinToString("\n\n"))
-                4 -> showInfo("免費翻譯模式", "不需要 OpenAI API 金鑰，也不會產生 OpenAI API 費用。翻譯使用 MyMemory 免費服務，需連接網路，品質可能不如 AI 翻譯。")
+                4 -> showInfo("免費翻譯模式", "不需要 OpenAI API 金鑰，也不會產生 OpenAI API 費用。翻譯使用免費線上翻譯服務，需連接網路；翻譯結果可能有歧義，重要內容請先確認再傳送。")
                 5 -> showInfo("關於應用", "中越翻譯通 3.0：免費線上中越翻譯。")
                 else -> if (which != 0) showInfo(items[which], "此功能將在後續版本加入。")
             }
@@ -186,13 +187,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val chinese = sourceChinese
         val pair = if (chinese) "zh-TW|vi" else "vi|zh-TW"
         val loading = TextView(this).apply {
-            text = "正在使用免費翻譯服務…"; setTextColor(blue); setPadding(8, 14, 8, 14)
+            text = "正在翻譯，請稍候…"; setTextColor(blue); setPadding(8, 14, 8, 14)
         }
         content.addView(loading)
         thread {
             try {
                 val encoded = java.net.URLEncoder.encode(original, "UTF-8")
-                val url = URL("https://api.mymemory.translated.net/get?q=$encoded&langpair=$pair")
+                val url = URL("https://api.mymemory.translated.net/get?q=$encoded&langpair=$pair&mt=1")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.connectTimeout = 15000
@@ -221,11 +222,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         }
                     }
                 }
-                // A small, language-neutral phrasing cleanup for a common Vietnamese question pattern.
-                if (chinese && translated.startsWith("Hôm nay bạn có vui vẻ trò chuyện với ") && translated.endsWith(" không?")) {
-                    val subject = translated.removePrefix("Hôm nay bạn có vui vẻ trò chuyện với ").removeSuffix(" không?")
-                    translated = "Hôm nay nói chuyện với $subject có vui không?"
-                }
+                // Decode HTML entities returned by the translation service and normalize whitespace only.
+                // Do not rewrite the translation with a guessed phrase: preserve the service's meaning.
+                translated = Html.fromHtml(translated, Html.FROM_HTML_MODE_LEGACY)
+                    .toString()
+                    .replace(Regex("[\\t\\r\\n ]+"), " ")
+                    .trim()
+                if (translated.isBlank()) throw IllegalStateException("免費翻譯服務沒有回傳有效內容，請稍後再試。")
                 val zh = if (chinese) original else translated
                 val vi = if (chinese) translated else original
                 val py = pinyin(zh)

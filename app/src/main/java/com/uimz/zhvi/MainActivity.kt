@@ -212,7 +212,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 runOnUiThread {
                     content.removeView(loading)
                     addBubble(zh, py, vi)
-                    history.add("$original\\n$zh\\n$vi")
+                    history.add("$original\n$zh\n$vi")
                     input.setText("")
                 }
             } catch (e: Exception) {

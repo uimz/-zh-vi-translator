@@ -7,10 +7,10 @@ android {
     compileSdk = 35
     defaultConfig {
         applicationId = "com.uimz.zhvi"
-        minSdk = 23
+        minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "3.0"
+        versionCode = 4
+        versionName = "4.0"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -20,4 +20,5 @@ android {
 }
 dependencies {
     implementation("com.belerweb:pinyin4j:2.5.1")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
 }

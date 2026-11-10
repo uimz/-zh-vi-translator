@@ -205,13 +205,34 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val json = JSONObject(body)
                 val status = json.optInt("responseStatus", 200)
                 if (status != 200) throw IllegalStateException(json.optString("responseDetails", "免費翻譯服務暫時無法使用"))
-                val translated = json.getJSONObject("responseData").getString("translatedText")
+                val responseData = json.getJSONObject("responseData")
+                val matches = json.optJSONArray("matches")
+                // Prefer the strongest available translation memory match when the service returns alternatives.
+                var translated = responseData.getString("translatedText")
+                var bestScore = -1.0
+                if (matches != null) {
+                    for (i in 0 until matches.length()) {
+                        val candidate = matches.optJSONObject(i) ?: continue
+                        val score = candidate.optString("match").toDoubleOrNull() ?: 0.0
+                        val candidateText = candidate.optString("translation").trim()
+                        if (candidateText.isNotEmpty() && score > bestScore) {
+                            bestScore = score
+                            translated = candidateText
+                        }
+                    }
+                }
+                // A small, language-neutral phrasing cleanup for a common Vietnamese question pattern.
+                if (chinese && translated.startsWith("Hôm nay bạn có vui vẻ trò chuyện với ") && translated.endsWith(" không?")) {
+                    val subject = translated.removePrefix("Hôm nay bạn có vui vẻ trò chuyện với ").removeSuffix(" không?")
+                    translated = "Hôm nay nói chuyện với $subject có vui không?"
+                }
                 val zh = if (chinese) original else translated
                 val vi = if (chinese) translated else original
                 val py = pinyin(zh)
+                val note = if (bestScore in 0.0..0.69) "免費翻譯服務提供的相符度較低，建議確認語意後再傳送。" else ""
                 runOnUiThread {
                     content.removeView(loading)
-                    addBubble(zh, py, vi)
+                    addBubble(zh, py, vi, note)
                     history.add("$original\n$zh\n$vi")
                     input.setText("")
                 }

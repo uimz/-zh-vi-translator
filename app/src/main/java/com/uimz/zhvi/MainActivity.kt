@@ -3,6 +3,7 @@ package com.uimz.zhvi
 import android.app.Activity
 import android.text.Html
 import android.app.AlertDialog
+import android.app.ProgressDialog
 import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
@@ -209,6 +210,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setMessage("準備下載約 2.6 GB，請保持網路連線…")
             setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
             max = 100
+            isIndeterminate = true
             setCancelable(false)
             show()
         }
@@ -224,6 +226,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val code = conn.responseCode
                 if (code !in 200..299) throw IllegalStateException("模型下載失敗（HTTP $code）")
                 val total = conn.contentLengthLong
+                runOnUiThread { if (!isFinishing && total > 0) progress.isIndeterminate = false }
                 conn.inputStream.use { input ->
                     temp.outputStream().buffered().use { output ->
                         val buffer = ByteArray(1024 * 1024)
@@ -253,7 +256,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 runOnUiThread {
                     if (!isFinishing) {
                         progress.dismiss()
-                        showInfo("模型下載完成", "Gemma 本機 AI 模型已下載。請到設定選擇「啟用本機 AI 翻譯」。第一次載入模型可能需要一些時間。")
+                        getSharedPreferences("translator", MODE_PRIVATE).edit().putBoolean("use_local_ai", true).apply()
+                        showInfo("模型下載完成", "Gemma 本機 AI 模型已下載並啟用。下次翻譯將優先使用手機本機 AI；第一次載入可能需要一些時間。")
                     }
                 }
             } catch (e: Exception) {
@@ -479,6 +483,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         if (::tts.isInitialized) tts.shutdown()
+        thread { LocalAiTranslator.close() }
         super.onDestroy()
     }
 }

@@ -265,7 +265,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         var i = 0
         while (i < s.length) {
             val ch = s[i]
-            if (ch in '\\u3400'..'\\u9fff') {
+            if (ch in '\u3400'..'\u9fff') {
                 val token = words.firstOrNull { s.startsWith(it, i) } ?: ch.toString()
                 if (out.isNotEmpty() && out.last() != ' ' && out.last() !in "，。！？；：、,.!?;:") out.append(' ')
                 token.forEach { han ->

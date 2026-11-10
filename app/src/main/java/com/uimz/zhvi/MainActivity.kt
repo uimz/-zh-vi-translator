@@ -7,15 +7,11 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.content.Context
-import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.speech.tts.TextToSpeech
 import android.widget.*
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
-import org.json.JSONArray
 import org.json.JSONObject
 import net.sourceforge.pinyin4j.PinyinHelper
 import java.net.HttpURLConnection
@@ -31,7 +27,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private val navy = Color.rgb(12, 43, 94)
     private val blue = Color.rgb(35, 100, 238)
     private val history = mutableListOf<String>()
-    private val model = "gpt-6.1-sol"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,11 +54,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
         top.addView(TextView(this).apply {
             text = "⚙"; textSize = 24f; setTextColor(Color.WHITE)
-            setOnClickListener { configureApiKey() }
+            setOnClickListener { showInfo("免費翻譯模式", "本版本不使用 OpenAI API，也不需要金鑰或額外 API 費用。翻譯由 MyMemory 免費服務提供，需連接網路；免費服務的翻譯品質與額度可能有限。") }
         })
         header.addView(top)
         header.addView(TextView(this).apply {
-            text = "AI 語意翻譯・自然口語・拼音・語音"
+            text = "免費中越翻譯・拼音・語音"
             textSize = 13f; setTextColor(Color.rgb(220, 230, 250))
             gravity = Gravity.CENTER; setPadding(0, 10, 0, 8)
         })
@@ -140,14 +135,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
         controls.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         controls.addView(Button(this).apply {
-            text = "AI 智慧翻譯"; textSize = 15f; setTextColor(Color.WHITE)
+            text = "免費翻譯"; textSize = 15f; setTextColor(Color.WHITE)
             background = rounded(blue, 14); setPadding(16, 4, 16, 4)
-            setOnClickListener { translateWithAi() }
+            setOnClickListener { translateFree() }
         })
         entry.addView(controls)
         content.addView(entry, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
         content.addView(TextView(this).apply {
-            text = "AI 翻譯結果"; textSize = 18f; setTypeface(null, Typeface.BOLD)
+            text = "翻譯結果"; textSize = 18f; setTypeface(null, Typeface.BOLD)
             setTextColor(navy); setPadding(2, 18, 2, 8)
         })
         scroll.addView(content)
@@ -161,37 +156,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         setContentView(root)
     }
 
-    private fun securePrefs() = EncryptedSharedPreferences.create(
-        this,
-        "ai_translation_secure",
-        MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
-
-    private fun configureApiKey() {
-        val edit = EditText(this).apply {
-            hint = "sk-…"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText(securePrefs().getString("openai_api_key", "") ?: "")
-        }
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 8, 24, 0) }
-        box.addView(TextView(this).apply {
-            text = "輸入你自己的 OpenAI API 金鑰。金鑰會加密保存在這台手機；翻譯文字會傳送至 OpenAI API。API 使用費另計。"
-            textSize = 14f
-        })
-        box.addView(edit)
-        AlertDialog.Builder(this).setTitle("AI 翻譯設定").setView(box)
-            .setPositiveButton("儲存") { _, _ ->
-                securePrefs().edit().putString("openai_api_key", edit.text.toString().trim()).apply()
-                showInfo("設定完成", "已儲存 API 金鑰。可以開始使用 AI 翻譯。")
-            }
-            .setNeutralButton("清除金鑰") { _, _ ->
-                securePrefs().edit().remove("openai_api_key").apply()
-                showInfo("已清除", "API 金鑰已從本機設定移除。")
-            }
-            .setNegativeButton("取消", null).show()
-    }
-
     private fun rounded(color: Int, radius: Int, stroke: Int = Color.TRANSPARENT): GradientDrawable =
         GradientDrawable().apply {
             setColor(color); cornerRadius = radius.toFloat()
@@ -199,12 +163,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
     private fun showMenu() {
-        val items = arrayOf("首頁翻譯", "翻譯紀錄", "常用語句", "生活情境分類", "AI 金鑰設定", "關於應用")
+        val items = arrayOf("首頁翻譯", "翻譯紀錄", "常用語句", "生活情境分類", "免費翻譯說明", "關於應用")
         AlertDialog.Builder(this).setTitle("中越翻譯通").setItems(items) { _, which ->
             when (which) {
                 1 -> showInfo("翻譯紀錄", if (history.isEmpty()) "目前沒有翻譯紀錄。" else history.joinToString("\n\n"))
-                4 -> configureApiKey()
-                5 -> showInfo("關於應用", "中越翻譯通 2.0：以 AI 理解語意、上下文及日常口語。")
+                4 -> showInfo("免費翻譯模式", "不需要 OpenAI API 金鑰，也不會產生 OpenAI API 費用。翻譯使用 MyMemory 免費服務，需連接網路，品質可能不如 AI 翻譯。")
+                5 -> showInfo("關於應用", "中越翻譯通 3.0：免費線上中越翻譯。")
                 else -> if (which != 0) showInfo(items[which], "此功能將在後續版本加入。")
             }
         }.show()
@@ -214,83 +178,47 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("知道了", null).show()
     }
 
-    private fun translateWithAi() {
+    private fun translateFree() {
         val original = input.text.toString().trim()
         if (original.isEmpty()) return
-        val apiKey = securePrefs().getString("openai_api_key", null)
-        if (apiKey.isNullOrBlank()) {
-            showInfo("尚未設定 AI 金鑰", "請先點右上角齒輪，輸入自己的 OpenAI API 金鑰。API 費用依實際使用量計算。")
-            return
-        }
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
             .hideSoftInputFromWindow(input.windowToken, 0)
         val chinese = sourceChinese
+        val pair = if (chinese) "zh-TW|vi" else "vi|zh-TW"
         val loading = TextView(this).apply {
-            text = "AI 正在理解語意與上下文…"; setTextColor(blue); setPadding(8, 14, 8, 14)
+            text = "正在使用免費翻譯服務…"; setTextColor(blue); setPadding(8, 14, 8, 14)
         }
         content.addView(loading)
         thread {
             try {
-                val direction = if (chinese) "繁體中文翻成越南語" else "越南語翻成台灣繁體中文"
-                val systemPrompt = """
-你是專業的繁體中文（台灣用語）與越南語雙向翻譯專家，服務對象是各種一般使用者與不同生活、工作、學習情境。
-任務：$direction。只根據本次輸入的文字進行翻譯。先理解整段話的完整意思、上下文線索、語氣與使用情境，再用目標語言自然表達；絕不可逐字硬翻，也不可為了順口而改變原意。
-隱私與通用性：不得引用、重現或假設任何其他聊天紀錄、個人資料、姓名、家庭背景或先前對話。不得把任何範例故事或使用者私人情境帶入翻譯。不得預設說話者與收件者的關係。
-翻譯品質規則：
-1. 繁體中文必須自然、符合台灣常用語；越南語必須自然、符合越南人日常及正式場合的實際用法。依原文語體選擇口語、正式、禮貌或中性表達，不要全部翻成同一種聊天口吻。
-2. 忠實傳達原句真正想表達的意思、言外之意、語氣與情緒（例如疑問、反問、提醒、請求、拒絕、玩笑、抱怨、無奈或客氣）。不可自行加重情緒、變得兇狠、過度親暱或擅自美化。
-3. 人稱代名詞、親屬稱謂、敬語及稱呼依本次文本明確提供的關係和上下文判斷。中文與越南語的稱謂系統不完全相同；若無法確定對方身分，不可擅自指定為老公、老婆、兄弟、長輩或其他關係，應採自然且中性的說法；若無法避免歧義，在 note 說明。
-4. 嚴格保留所有人名、地名、品牌、數字、數量、日期、時間、金額、重量、單位、否定詞、條件、比較、先後順序及責任歸屬。不可漏譯或自行換算造成數值差異。單位可在目標語言加上易懂表達，但原數值與原單位資訊必須保留。
-5. 專有名詞、俗語、成語、縮寫及文化用語要先判斷語境，再選擇目標語言最接近、最容易理解的說法；沒有可靠對應時，不要憑空創造解釋。
-6. 不確定或有兩種以上合理解讀時，不要猜測或擅自選一種。先給最保守且忠實的譯法，並在 note 用繁體中文簡短指出歧義及可能差別。只有明顯錯字且上下文能確定時才修正。
-7. 輸出欄位固定：traditional_chinese 為自然的台灣繁體中文；pinyin 為 traditional_chinese 的標準漢語拼音並使用聲調符號；vietnamese 為自然越南語。
-   - 若輸入是繁體中文：traditional_chinese 必須保留使用者原文，不可擅自改寫；vietnamese 輸出自然準確的越南語譯文。
-   - 若輸入是越南語：vietnamese 必須完整保留使用者輸入原文，不可自行潤飾或刪改；traditional_chinese 輸出自然準確的台灣繁體中文譯文。
-   - 無論輸入方向為何，pinyin 都只對應 traditional_chinese。
-8. 只根據本次輸入翻譯，不要引用任何先前訊息，也不要把翻譯以外的說明混進譯文。只回傳 JSON，不要 Markdown、前言、解釋或多餘欄位，格式為：
-{"traditional_chinese":"...","pinyin":"...","vietnamese":"...","note":""}
-若有重要歧義，note 用繁體中文簡短說明；沒有則空字串。
-""".trimIndent()
-                val messages = JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    .put(JSONObject().put("role", "user").put("content", original))
-                val request = JSONObject()
-                    .put("model", model)
-                    .put("response_format", JSONObject().put("type", "json_object"))
-                    .put("messages", messages)
-                val conn = URL("https://api.openai.com/v1/chat/completions").openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.connectTimeout = 20000
-                conn.readTimeout = 45000
-                conn.doOutput = true
-                conn.setRequestProperty("Authorization", "Bearer $apiKey")
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
+                val encoded = java.net.URLEncoder.encode(original, "UTF-8")
+                val url = URL("https://api.mymemory.translated.net/get?q=$encoded&langpair=$pair")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 15000
+                conn.readTimeout = 20000
                 val code = conn.responseCode
                 val stream = if (code in 200..299) conn.inputStream else conn.errorStream
                 val body = stream.bufferedReader().use { it.readText() }
                 conn.disconnect()
-                if (code !in 200..299) {
-                    val errorMessage = try { JSONObject(body).getJSONObject("error").optString("message") } catch (_: Exception) { "API 請求失敗（HTTP $code）" }
-                    throw IllegalStateException(errorMessage)
-                }
-                val response = JSONObject(body).getJSONArray("choices").getJSONObject(0)
-                    .getJSONObject("message").getString("content")
-                val result = JSONObject(response)
-                val zh = result.optString("traditional_chinese")
-                val py = result.optString("pinyin")
-                val vi = result.optString("vietnamese")
-                val note = result.optString("note")
+                if (code !in 200..299) throw IllegalStateException("免費翻譯服務暫時無法使用（HTTP $code）")
+                val json = JSONObject(body)
+                val status = json.optInt("responseStatus", 200)
+                if (status != 200) throw IllegalStateException(json.optString("responseDetails", "免費翻譯服務暫時無法使用"))
+                val translated = json.getJSONObject("responseData").getString("translatedText")
+                val zh = if (chinese) original else translated
+                val vi = if (chinese) translated else original
+                val py = pinyin(zh)
                 runOnUiThread {
                     content.removeView(loading)
-                    addBubble(zh, py, vi, note)
-                    history.add("$original\n$zh\n$vi")
+                    addBubble(zh, py, vi)
+                    history.add("$original\\n$zh\\n$vi")
                     input.setText("")
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     content.removeView(loading)
-                    showInfo("AI 翻譯未完成", e.message ?: "請檢查網路、API 金鑰與 API 額度。")
+                    showInfo("翻譯失敗", e.message ?: "請檢查網路連線後再試。")
                 }
             }
         }
@@ -303,7 +231,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 toneMarks(raw)
             } else c.toString()
         }
-        return syllables.joinToString("")
+        return syllables.joinToString(" ")
             .replace(Regex("([A-Za-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü]+)([，。！？；：、,.!?;:]*)")) { it.value }
     }
 

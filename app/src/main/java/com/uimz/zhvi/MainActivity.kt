@@ -207,23 +207,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val status = json.optInt("responseStatus", 200)
                 if (status != 200) throw IllegalStateException(json.optString("responseDetails", "免費翻譯服務暫時無法使用"))
                 val responseData = json.getJSONObject("responseData")
-                val matches = json.optJSONArray("matches")
-                // Prefer the strongest available translation memory match when the service returns alternatives.
+                // Use the service's primary machine-translation result. Translation-memory matches
+                // can be partial phrase fragments, even when their match score is high.
                 var translated = responseData.getString("translatedText")
-                var bestScore = -1.0
-                if (matches != null) {
-                    for (i in 0 until matches.length()) {
-                        val candidate = matches.optJSONObject(i) ?: continue
-                        val score = candidate.optString("match").toDoubleOrNull() ?: 0.0
-                        val candidateText = candidate.optString("translation").trim()
-                        if (candidateText.isNotEmpty() && score > bestScore) {
-                            bestScore = score
-                            translated = candidateText
-                        }
-                    }
-                }
-                // Decode HTML entities returned by the translation service and normalize whitespace only.
-                // Do not rewrite the translation with a guessed phrase: preserve the service's meaning.
                 translated = Html.fromHtml(translated, Html.FROM_HTML_MODE_LEGACY)
                     .toString()
                     .replace(Regex("[\\t\\r\\n ]+"), " ")
@@ -249,14 +235,45 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun pinyin(s: String): String {
-        val syllables = s.map { c ->
-            if (c in '\u3400'..'\u9fff') {
-                val raw = PinyinHelper.toHanyuPinyinStringArray(c)?.firstOrNull()?.substringBefore(",") ?: c.toString()
-                toneMarks(raw)
-            } else c.toString()
+        // Keep common Chinese words together instead of inserting spaces between every character.
+        val commonWords = listOf(
+            "今天", "明天", "昨天", "現在", "以前", "以後", "台灣", "臺灣", "越南",
+            "天氣", "時間", "地方", "朋友", "家人", "工作", "上班", "下班", "吃飯",
+            "睡覺", "開心", "高興", "漂亮", "謝謝", "不好意思", "沒關係", "怎麼", "為什麼",
+            "多少", "可以", "需要", "如果", "因為", "所以", "但是", "而且", "已經",
+            "非常", "真的", "可能", "知道", "覺得", "喜歡", "幫忙", "翻譯", "中文",
+            "繁體", "越南語", "很冷", "很熱", "下雨", "天冷", "天熱", "早上", "晚上",
+            "中午", "下午", "星期", "禮拜", "明年", "今年", "昨天晚上"
+        ).sortedByDescending { it.length }
+
+        val tokens = mutableListOf<String>()
+        var i = 0
+        while (i < s.length) {
+            val ch = s[i]
+            if (ch in '\\u3400'..'\\u9fff') {
+                val word = commonWords.firstOrNull { s.startsWith(it, i) } ?: ch.toString()
+                val syllables = word.map { char ->
+                    val raw = PinyinHelper.toHanyuPinyinStringArray(char)
+                        ?.firstOrNull()?.substringBefore(",") ?: char.toString()
+                    toneMarks(raw)
+                }.joinToString("")
+                tokens.add(syllables)
+                i += word.length
+            } else if (ch.isWhitespace()) {
+                if (tokens.isNotEmpty() && tokens.last() != " ") tokens.add(" ")
+                i++
+            } else if (ch in "，。！？；：、,.!?;:") {
+                if (tokens.isNotEmpty()) tokens[tokens.lastIndex] = tokens.last() + ch
+                else tokens.add(ch.toString())
+                i++
+            } else {
+                tokens.add(ch.toString())
+                i++
+            }
         }
-        return syllables.joinToString(" ")
-            .replace(Regex("([A-Za-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü]+)([，。！？；：、,.!?;:]*)")) { it.value }
+        return tokens.joinToString("")
+            .replace(Regex(" +"), " ")
+            .trim()
     }
 
     private fun toneMarks(raw: String): String {

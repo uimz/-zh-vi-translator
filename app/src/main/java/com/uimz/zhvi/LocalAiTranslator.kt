@@ -66,7 +66,7 @@ object LocalAiTranslator {
         val result = conversation!!.sendMessage(prompt).text.trim()
         val cleaned = result
             .removePrefix("```").removeSuffix("```")
-            .removeSurrounding(""").removeSurrounding("'")
+            .removeSurrounding("\"").removeSurrounding("'")
             .trim()
         if (cleaned.isBlank()) throw IllegalStateException("本機 AI 沒有產生有效翻譯。")
         return cleaned

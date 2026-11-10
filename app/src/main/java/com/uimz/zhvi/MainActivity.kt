@@ -320,7 +320,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             'e' to listOf('ē','é','ě','è'), 'i' to listOf('ī','í','ǐ','ì'),
             'u' to listOf('ū','ú','ǔ','ù'), 'ü' to listOf('ǖ','ǘ','ǚ','ǜ')
         )
-        return base.replaceFirst(target, marks[target[0]]!![tone - 1])
+        return base.replaceFirst(target, marks[target[0]]!![tone - 1].toString())
     }
 
     private fun addBubble(zh: String, py: String, vi: String, note: String = "") {

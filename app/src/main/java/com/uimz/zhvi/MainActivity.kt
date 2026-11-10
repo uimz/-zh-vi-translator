@@ -31,7 +31,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private val navy = Color.rgb(12, 43, 94)
     private val blue = Color.rgb(35, 100, 238)
     private val history = mutableListOf<String>()
-    private val model = "gpt-4.1-mini"
+    private val model = "gpt-6.1-sol"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -243,8 +243,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 4. 嚴格保留所有人名、地名、品牌、數字、數量、日期、時間、金額、重量、單位、否定詞、條件、比較、先後順序及責任歸屬。不可漏譯或自行換算造成數值差異。單位可在目標語言加上易懂表達，但原數值與原單位資訊必須保留。
 5. 專有名詞、俗語、成語、縮寫及文化用語要先判斷語境，再選擇目標語言最接近、最容易理解的說法；沒有可靠對應時，不要憑空創造解釋。
 6. 不確定或有兩種以上合理解讀時，不要猜測或擅自選一種。先給最保守且忠實的譯法，並在 note 用繁體中文簡短指出歧義及可能差別。只有明顯錯字且上下文能確定時才修正。
-7. 輸出欄位固定：traditional_chinese 為自然的台灣繁體中文；pinyin 為 traditional_chinese 的標準漢語拼音並使用聲調符號；vietnamese 為自然越南語。即使輸入是越南語，也要提供其繁體中文譯文、中文拼音及越南語原文或自然整理後的原句。
-8. 只回傳 JSON，不要 Markdown、前言、解釋或多餘欄位，格式為：
+7. 輸出欄位固定：traditional_chinese 為自然的台灣繁體中文；pinyin 為 traditional_chinese 的標準漢語拼音並使用聲調符號；vietnamese 為自然越南語。
+   - 若輸入是繁體中文：traditional_chinese 必須保留使用者原文，不可擅自改寫；vietnamese 輸出自然準確的越南語譯文。
+   - 若輸入是越南語：vietnamese 必須完整保留使用者輸入原文，不可自行潤飾或刪改；traditional_chinese 輸出自然準確的台灣繁體中文譯文。
+   - 無論輸入方向為何，pinyin 都只對應 traditional_chinese。
+8. 只根據本次輸入翻譯，不要引用任何先前訊息，也不要把翻譯以外的說明混進譯文。只回傳 JSON，不要 Markdown、前言、解釋或多餘欄位，格式為：
 {"traditional_chinese":"...","pinyin":"...","vietnamese":"...","note":""}
 若有重要歧義，note 用繁體中文簡短說明；沒有則空字串。
 """.trimIndent()
@@ -253,7 +256,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     .put(JSONObject().put("role", "user").put("content", original))
                 val request = JSONObject()
                     .put("model", model)
-                    .put("temperature", 0.2)
                     .put("response_format", JSONObject().put("type", "json_object"))
                     .put("messages", messages)
                 val conn = URL("https://api.openai.com/v1/chat/completions").openConnection() as HttpURLConnection

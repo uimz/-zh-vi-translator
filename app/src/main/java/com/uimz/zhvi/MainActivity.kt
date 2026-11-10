@@ -55,7 +55,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
         top.addView(TextView(this).apply {
             text = "⚙"; textSize = 24f; setTextColor(Color.WHITE)
-            setOnClickListener { showInfo("免費翻譯模式", "本版本不使用 OpenAI API，也不需要金鑰或額外 API 費用。翻譯由 MyMemory 免費服務提供，需連接網路；免費服務的翻譯品質與額度可能有限。") }
+            setOnClickListener { showAiSettings() }
         })
         header.addView(top)
         header.addView(TextView(this).apply {
@@ -164,15 +164,108 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
     private fun showMenu() {
-        val items = arrayOf("首頁翻譯", "翻譯紀錄", "常用語句", "生活情境分類", "免費翻譯說明", "關於應用")
+        val items = arrayOf("首頁翻譯", "翻譯紀錄", "常用語句", "生活情境分類", "本機 AI 翻譯設定", "免費翻譯說明", "關於應用")
         AlertDialog.Builder(this).setTitle("中越翻譯通").setItems(items) { _, which ->
             when (which) {
                 1 -> showInfo("翻譯紀錄", if (history.isEmpty()) "目前沒有翻譯紀錄。" else history.joinToString("\n\n"))
-                4 -> showInfo("免費翻譯模式", "不需要 OpenAI API 金鑰，也不會產生 OpenAI API 費用。翻譯使用免費線上翻譯服務，需連接網路；翻譯結果可能有歧義，重要內容請先確認再傳送。")
-                5 -> showInfo("關於應用", "中越翻譯通 3.0：免費線上中越翻譯。")
+                4 -> showAiSettings()
+                5 -> showInfo("免費翻譯模式", "本機 AI 在手機上運作，不需要 OpenAI API 金鑰或按次付費。第一次下載 Gemma 模型約 2.6 GB，需要網路與足夠儲存空間。MyMemory 免費翻譯仍保留作為備援。")
+                6 -> showInfo("關於應用", "中越翻譯通 4.0：免費線上翻譯與可選本機 AI 翻譯。")
                 else -> if (which != 0) showInfo(items[which], "此功能將在後續版本加入。")
             }
         }.show()
+    }
+
+    private fun showAiSettings() {
+        val modelFile = java.io.File(filesDir, "gemma-4-E2B-it.litertlm")
+        val installed = modelFile.exists() && modelFile.length() > 1_000_000_000L
+        val status = if (installed) "模型已下載，可使用本機 AI 翻譯。" else "尚未下載模型。第一次下載約 2.6 GB，請使用 Wi-Fi 並預留至少 4 GB 空間。"
+        val choices = if (installed) arrayOf("啟用本機 AI 翻譯", "改用免費線上翻譯", "重新下載模型") else arrayOf("下載本機 AI 模型（約 2.6 GB）", "繼續使用免費線上翻譯")
+        AlertDialog.Builder(this)
+            .setTitle("本機 AI 翻譯")
+            .setMessage(status + "\n\nAI 模型在手機本機執行，不需要 OpenAI API 金鑰，也不會按翻譯次數收費。")
+            .setItems(choices) { _, which ->
+                if (!installed && which == 0 || installed && which == 2) downloadAiModel()
+                else if (installed && which == 0) {
+                    getSharedPreferences("translator", MODE_PRIVATE).edit().putBoolean("use_local_ai", true).apply()
+                    showInfo("本機 AI 已啟用", "下次翻譯將優先使用手機本機 AI。若模型無法載入，會自動改用免費線上翻譯。")
+                } else {
+                    getSharedPreferences("translator", MODE_PRIVATE).edit().putBoolean("use_local_ai", false).apply()
+                    showInfo("已切換免費模式", "下次翻譯將使用免費線上翻譯服務。")
+                }
+            }.setNegativeButton("關閉", null).show()
+    }
+
+    private fun downloadAiModel() {
+        val target = java.io.File(filesDir, "gemma-4-E2B-it.litertlm")
+        val stat = android.os.StatFs(filesDir.absolutePath)
+        val available = stat.availableBytes
+        if (available < 3_500_000_000L) {
+            showInfo("儲存空間不足", "下載模型需要約 2.6 GB，建議至少保留 3.5 GB 可用空間。請先清理手機儲存空間。")
+            return
+        }
+        val progress = ProgressDialog(this).apply {
+            setTitle("下載本機 AI 模型")
+            setMessage("準備下載約 2.6 GB，請保持網路連線…")
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            max = 100
+            setCancelable(false)
+            show()
+        }
+        thread {
+            val temp = java.io.File(filesDir, "gemma-model.download")
+            try {
+                val url = URL("https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 30000
+                conn.readTimeout = 60000
+                conn.instanceFollowRedirects = true
+                conn.setRequestProperty("User-Agent", "ZhiViTranslator-Android")
+                val code = conn.responseCode
+                if (code !in 200..299) throw IllegalStateException("模型下載失敗（HTTP $code）")
+                val total = conn.contentLengthLong
+                conn.inputStream.use { input ->
+                    temp.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(1024 * 1024)
+                        var downloaded = 0L
+                        var count: Int
+                        while (input.read(buffer).also { count = it } != -1) {
+                            output.write(buffer, 0, count)
+                            downloaded += count
+                            if (total > 0) {
+                                val percent = ((downloaded * 100) / total).toInt().coerceIn(0, 100)
+                                runOnUiThread {
+                                    if (!isFinishing) {
+                                        progress.progress = percent
+                                        progress.setMessage("已下載 %.1f / %.1f GB".format(
+                                            downloaded / 1_000_000_000.0, total / 1_000_000_000.0
+                                        ))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                conn.disconnect()
+                if (temp.length() < 1_000_000_000L) throw IllegalStateException("下載檔案大小不正確，請重新下載。")
+                if (target.exists()) target.delete()
+                if (!temp.renameTo(target)) throw IllegalStateException("無法儲存模型檔案，請檢查儲存空間。")
+                runOnUiThread {
+                    if (!isFinishing) {
+                        progress.dismiss()
+                        showInfo("模型下載完成", "Gemma 本機 AI 模型已下載。請到設定選擇「啟用本機 AI 翻譯」。第一次載入模型可能需要一些時間。")
+                    }
+                }
+            } catch (e: Exception) {
+                temp.delete()
+                runOnUiThread {
+                    if (!isFinishing) {
+                        progress.dismiss()
+                        showInfo("模型下載失敗", e.message ?: "請檢查網路後再試。")
+                    }
+                }
+            }
+        }
     }
 
     private fun showInfo(title: String, message: String) {
@@ -185,99 +278,34 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
             .hideSoftInputFromWindow(input.windowToken, 0)
         val chinese = sourceChinese
-        val pair = if (chinese) "zh-TW|vi" else "vi|zh-TW"
         val loading = TextView(this).apply {
             text = "正在翻譯，請稍候…"; setTextColor(blue); setPadding(8, 14, 8, 14)
         }
         content.addView(loading)
         thread {
             try {
-                val encoded = java.net.URLEncoder.encode(original, "UTF-8")
-                val url = URL("https://api.mymemory.translated.net/get?q=$encoded&langpair=$pair&mt=1")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                conn.connectTimeout = 15000
-                conn.readTimeout = 20000
-                val code = conn.responseCode
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                val body = stream.bufferedReader().use { it.readText() }
-                conn.disconnect()
-                if (code !in 200..299) throw IllegalStateException("免費翻譯服務暫時無法使用（HTTP $code）")
-                val json = JSONObject(body)
-                val status = json.optInt("responseStatus", 200)
-                if (status != 200) throw IllegalStateException(json.optString("responseDetails", "免費翻譯服務暫時無法使用"))
-                val responseData = json.getJSONObject("responseData")
-                // Start with the provider's complete primary result. Translation-memory
-                // matches are considered only when they preserve more source concepts.
-                var translated = responseData.optString("translatedText", "").trim()
-                if (translated.isBlank()) throw IllegalStateException("免費翻譯服務沒有回傳有效內容，請稍後再試。")
-
-                val conceptPairs = if (chinese) listOf(
-                    "天氣" to listOf("thời tiết"),
-                    "下雨" to listOf("mưa"),
-                    "很冷" to listOf("lạnh"), "很熱" to listOf("nóng"),
-                    "開心" to listOf("vui", "hạnh phúc"),
-                    "今天" to listOf("hôm nay"),
-                    "明天" to listOf("ngày mai"),
-                    "台灣" to listOf("đài loan"), "臺灣" to listOf("đài loan"),
-                    "越南" to listOf("việt nam")
-                ) else listOf(
-                    "thời tiết" to listOf("天氣"),
-                    "mưa" to listOf("下雨", "雨"),
-                    "lạnh" to listOf("冷"), "nóng" to listOf("熱"),
-                    "hôm nay" to listOf("今天"),
-                    "ngày mai" to listOf("明天"),
-                    "đài loan" to listOf("台灣", "臺灣"),
-                    "việt nam" to listOf("越南")
-                )
-                val requiredConcepts = conceptPairs.filter { (sourceTerm, _) ->
-                    original.contains(sourceTerm, ignoreCase = true)
-                }.map { it.second }
-                fun conceptCoverage(candidate: String): Int {
-                    val lower = candidate.lowercase()
-                    return requiredConcepts.count { alternatives ->
-                        alternatives.any { lower.contains(it.lowercase()) }
+                val prefs = getSharedPreferences("translator", MODE_PRIVATE)
+                val modelFile = java.io.File(filesDir, "gemma-4-E2B-it.litertlm")
+                val useAi = prefs.getBoolean("use_local_ai", false) && modelFile.exists()
+                var translated: String
+                var note = ""
+                if (useAi) {
+                    try {
+                        translated = LocalAiTranslator.translate(this, modelFile.absolutePath, original, chinese)
+                        note = "由手機本機 AI 產生；重要內容仍建議核對。"
+                    } catch (aiError: Exception) {
+                        translated = translateOnline(original, chinese)
+                        note = "本機 AI 暫時無法使用，已改用免費線上翻譯。"
+                    }
+                } else {
+                    translated = translateOnline(original, chinese)
+                    if (prefs.getBoolean("use_local_ai", false) && !modelFile.exists()) {
+                        note = "本機 AI 模型尚未安裝，已使用免費線上翻譯。"
                     }
                 }
-                val primaryCoverage = conceptCoverage(translated)
-                val matches = json.optJSONArray("matches")
-                if (matches != null && requiredConcepts.isNotEmpty()) {
-                    var bestCandidate = translated
-                    var bestCoverage = primaryCoverage
-                    var bestScore = -1.0
-                    for (i in 0 until matches.length()) {
-                        val candidate = matches.optJSONObject(i) ?: continue
-                        val candidateText = Html.fromHtml(
-                            candidate.optString("translation", ""), Html.FROM_HTML_MODE_LEGACY
-                        ).toString().trim()
-                        if (candidateText.isBlank()) continue
-                        val coverage = conceptCoverage(candidateText)
-                        val score = candidate.optString("match").toDoubleOrNull() ?: 0.0
-                        if (coverage > bestCoverage || (coverage == bestCoverage && coverage > primaryCoverage && score > bestScore)) {
-                            bestCandidate = candidateText
-                            bestCoverage = coverage
-                            bestScore = score
-                        }
-                    }
-                    translated = bestCandidate
-                }
-
-                // Normalize provider markup/whitespace only; never invent a replacement sentence.
-                translated = Html.fromHtml(translated, Html.FROM_HTML_MODE_LEGACY)
-                    .toString()
-                    .replace(Regex("[\\t\\r\\n ]+"), " ")
-                    .trim()
-                if (translated.isBlank()) throw IllegalStateException("免費翻譯服務沒有回傳有效內容，請稍後再試。")
                 val zh = if (chinese) original else translated
                 val vi = if (chinese) translated else original
                 val py = pinyin(zh)
-                val primaryScore = responseData.optDouble("match", -1.0)
-                val missingConcept = requiredConcepts.isNotEmpty() && conceptCoverage(translated) < requiredConcepts.size
-                val note = when {
-                    missingConcept -> "部分原文重點可能未完整出現在譯文中，建議核對後再傳送。"
-                    primaryScore in 0.0..0.69 -> "免費翻譯服務提供的相符度較低，建議確認語意後再傳送。"
-                    else -> ""
-                }
                 runOnUiThread {
                     content.removeView(loading)
                     addBubble(zh, py, vi, note)
@@ -291,6 +319,73 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
             }
         }
+    }
+
+    private fun translateOnline(original: String, chinese: Boolean): String {
+        val pair = if (chinese) "zh-TW|vi" else "vi|zh-TW"
+        val encoded = java.net.URLEncoder.encode(original, "UTF-8")
+        val url = URL("https://api.mymemory.translated.net/get?q=$encoded&langpair=$pair&mt=1")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 15000
+        conn.readTimeout = 20000
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val body = stream.bufferedReader().use { it.readText() }
+        conn.disconnect()
+        if (code !in 200..299) throw IllegalStateException("免費翻譯服務暫時無法使用（HTTP $code）")
+        val json = JSONObject(body)
+        val status = json.optInt("responseStatus", 200)
+        if (status != 200) throw IllegalStateException(json.optString("responseDetails", "免費翻譯服務暫時無法使用"))
+        val responseData = json.getJSONObject("responseData")
+        var translated = responseData.optString("translatedText", "").trim()
+        if (translated.isBlank()) throw IllegalStateException("免費翻譯服務沒有回傳有效內容，請稍後再試。")
+        val conceptPairs = if (chinese) listOf(
+            "天氣" to listOf("thời tiết"), "下雨" to listOf("mưa"),
+            "很冷" to listOf("lạnh"), "很熱" to listOf("nóng"),
+            "開心" to listOf("vui", "hạnh phúc"), "今天" to listOf("hôm nay"),
+            "明天" to listOf("ngày mai"), "台灣" to listOf("đài loan"),
+            "臺灣" to listOf("đài loan"), "越南" to listOf("việt nam")
+        ) else listOf(
+            "thời tiết" to listOf("天氣"), "mưa" to listOf("下雨", "雨"),
+            "lạnh" to listOf("冷"), "nóng" to listOf("熱"),
+            "hôm nay" to listOf("今天"), "ngày mai" to listOf("明天"),
+            "đài loan" to listOf("台灣", "臺灣"), "việt nam" to listOf("越南")
+        )
+        val requiredConcepts = conceptPairs.filter { (term, _) ->
+            original.contains(term, ignoreCase = true)
+        }.map { it.second }
+        fun coverage(candidate: String): Int {
+            val lower = candidate.lowercase()
+            return requiredConcepts.count { options -> options.any { lower.contains(it.lowercase()) } }
+        }
+        val initialCoverage = coverage(translated)
+        val matches = json.optJSONArray("matches")
+        if (matches != null && requiredConcepts.isNotEmpty()) {
+            var best = translated
+            var bestCoverage = initialCoverage
+            var bestScore = -1.0
+            for (i in 0 until matches.length()) {
+                val candidate = matches.optJSONObject(i) ?: continue
+                val value = Html.fromHtml(candidate.optString("translation", ""), Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                if (value.isBlank()) continue
+                val score = candidate.optString("match").toDoubleOrNull() ?: 0.0
+                val candidateCoverage = coverage(value)
+                if (candidateCoverage > bestCoverage || (candidateCoverage == bestCoverage && candidateCoverage > initialCoverage && score > bestScore)) {
+                    best = value
+                    bestCoverage = candidateCoverage
+                    bestScore = score
+                }
+            }
+            translated = best
+        }
+        translated = Html.fromHtml(translated, Html.FROM_HTML_MODE_LEGACY).toString()
+            .replace(Regex("[\\t\\r\\n ]+"), " ").trim()
+        if (translated.isBlank()) throw IllegalStateException("免費翻譯服務沒有回傳有效內容，請稍後再試。")
+        if (requiredConcepts.isNotEmpty() && coverage(translated) < requiredConcepts.size) {
+            // Keep the provider result but do not claim that the translation is fully verified.
+        }
+        return translated
     }
 
     private fun pinyin(s: String): String {

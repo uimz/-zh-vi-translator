@@ -63,7 +63,7 @@ object LocalAiTranslator {
             """.trimIndent()
         }
 
-        val result = conversation!!.sendMessage(prompt).text.trim()
+        val result = conversation!!.sendMessage(prompt).toString().trim()
         val cleaned = result
             .removePrefix("```").removeSuffix("```")
             .removeSurrounding("\"").removeSurrounding("'")

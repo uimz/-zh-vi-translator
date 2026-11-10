@@ -207,25 +207,62 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val status = json.optInt("responseStatus", 200)
                 if (status != 200) throw IllegalStateException(json.optString("responseDetails", "免費翻譯服務暫時無法使用"))
                 val responseData = json.getJSONObject("responseData")
-                // Keep the service's primary sentence as the source of truth. A high-scoring
-                // translation-memory fragment can be shorter than the full input and omit meaning.
+                // Start with the provider's complete primary result. Translation-memory
+                // matches are considered only when they preserve more source concepts.
                 var translated = responseData.optString("translatedText", "").trim()
-                if (translated.isBlank()) {
-                    val matches = json.optJSONArray("matches")
-                    var bestScore = -1.0
-                    if (matches != null) {
-                        for (i in 0 until matches.length()) {
-                            val candidate = matches.optJSONObject(i) ?: continue
-                            val score = candidate.optString("match").toDoubleOrNull() ?: 0.0
-                            val candidateText = candidate.optString("translation").trim()
-                            if (candidateText.isNotEmpty() && score > bestScore) {
-                                bestScore = score
-                                translated = candidateText
-                            }
-                        }
+                if (translated.isBlank()) throw IllegalStateException("免費翻譯服務沒有回傳有效內容，請稍後再試。")
+
+                val conceptPairs = if (chinese) listOf(
+                    "天氣" to listOf("thời tiết"),
+                    "下雨" to listOf("mưa"),
+                    "很冷" to listOf("lạnh"), "很熱" to listOf("nóng"),
+                    "開心" to listOf("vui", "hạnh phúc"),
+                    "今天" to listOf("hôm nay"),
+                    "明天" to listOf("ngày mai"),
+                    "台灣" to listOf("đài loan"), "臺灣" to listOf("đài loan"),
+                    "越南" to listOf("việt nam")
+                ) else listOf(
+                    "thời tiết" to listOf("天氣"),
+                    "mưa" to listOf("下雨", "雨"),
+                    "lạnh" to listOf("冷"), "nóng" to listOf("熱"),
+                    "hôm nay" to listOf("今天"),
+                    "ngày mai" to listOf("明天"),
+                    "đài loan" to listOf("台灣", "臺灣"),
+                    "việt nam" to listOf("越南")
+                )
+                val requiredConcepts = conceptPairs.filter { (sourceTerm, _) ->
+                    original.contains(sourceTerm, ignoreCase = true)
+                }.map { it.second }
+                fun conceptCoverage(candidate: String): Int {
+                    val lower = candidate.lowercase()
+                    return requiredConcepts.count { alternatives ->
+                        alternatives.any { lower.contains(it.lowercase()) }
                     }
                 }
-                // Decode HTML entities and normalize whitespace without changing the wording.
+                val primaryCoverage = conceptCoverage(translated)
+                val matches = json.optJSONArray("matches")
+                if (matches != null && requiredConcepts.isNotEmpty()) {
+                    var bestCandidate = translated
+                    var bestCoverage = primaryCoverage
+                    var bestScore = -1.0
+                    for (i in 0 until matches.length()) {
+                        val candidate = matches.optJSONObject(i) ?: continue
+                        val candidateText = Html.fromHtml(
+                            candidate.optString("translation", ""), Html.FROM_HTML_MODE_LEGACY
+                        ).toString().trim()
+                        if (candidateText.isBlank()) continue
+                        val coverage = conceptCoverage(candidateText)
+                        val score = candidate.optString("match").toDoubleOrNull() ?: 0.0
+                        if (coverage > bestCoverage || (coverage == bestCoverage && coverage > primaryCoverage && score > bestScore)) {
+                            bestCandidate = candidateText
+                            bestCoverage = coverage
+                            bestScore = score
+                        }
+                    }
+                    translated = bestCandidate
+                }
+
+                // Normalize provider markup/whitespace only; never invent a replacement sentence.
                 translated = Html.fromHtml(translated, Html.FROM_HTML_MODE_LEGACY)
                     .toString()
                     .replace(Regex("[\\t\\r\\n ]+"), " ")
@@ -235,7 +272,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val vi = if (chinese) translated else original
                 val py = pinyin(zh)
                 val primaryScore = responseData.optDouble("match", -1.0)
-                val note = if (primaryScore in 0.0..0.69) "免費翻譯服務提供的相符度較低，建議確認語意後再傳送。" else ""
+                val missingConcept = requiredConcepts.isNotEmpty() && conceptCoverage(translated) < requiredConcepts.size
+                val note = when {
+                    missingConcept -> "部分原文重點可能未完整出現在譯文中，建議核對後再傳送。"
+                    primaryScore in 0.0..0.69 -> "免費翻譯服務提供的相符度較低，建議確認語意後再傳送。"
+                    else -> ""
+                }
                 runOnUiThread {
                     content.removeView(loading)
                     addBubble(zh, py, vi, note)
